@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Campionato — Classifica minimal</title>
+  <title>Campionato — Classifica minimal (calcolo automatico)</title>
   <style>
     :root{
       --bg:#f6f7fb; --card:#fff; --muted:#6b7280; --accent:#0ea5a4;
@@ -30,7 +30,7 @@
     .scorers{list-style:none;padding:0;margin:0}
     .scorers li{padding:8px 0;border-bottom:1px dashed #eef2f7;display:flex;justify-content:space-between}
     .muted{color:var(--muted)}
-    textarea{width:100%;min-height:120px;font-family:monospace;font-size:13px;padding:8px;border-radius:8px;border:1px solid #e6e9ef}
+    textarea{width:100%;min-height:160px;font-family:monospace;font-size:13px;padding:8px;border-radius:8px;border:1px solid #e6e9ef}
     .small-note{font-size:12px;color:var(--muted);margin-top:8px}
     .matchday{margin-bottom:12px;border-top:1px solid #f1f5f9;padding-top:10px}
     .match{display:flex;justify-content:space-between;align-items:center;padding:6px 0}
@@ -44,13 +44,13 @@
   <div class="wrap">
     <header>
       <div class="brand">Campionato — Minimal</div>
-      <div class="subtitle">Manchester City, Santos, Napoli, Atletico Madrid</div>
+      <div class="subtitle">Classifica calcolata automaticamente dalle giornate</div>
     </header>
 
     <div class="grid">
       <main class="card">
         <h2 style="margin-top:0;margin-bottom:6px">Classifica</h2>
-        <div class="small">I dati vengono salvati localmente nel browser — modifica il JSON a destra e premi <strong>Applica dati</strong>.</div>
+        <div class="small">I dati vengono salvati localmente nel browser — modifica il JSON a destra e premi <strong>Applica dati</strong>. La classifica e i marcatori vengono calcolati automaticamente dalle <em>matchdays</em>.</div>
 
         <div style="overflow:auto;margin-top:12px">
           <table id="table-standings" aria-label="Classifica">
@@ -93,8 +93,9 @@
           <div style="display:flex;gap:8px;margin-top:8px">
             <button class="btn primary" onclick="applyData()">Applica dati</button>
             <button class="btn" onclick="downloadHTML()">Scarica .html</button>
+            <button class="btn" onclick="computeFromMatchdaysAndUpdateTextarea()">Calcola da giornate</button>
           </div>
-          <div class="small-note">Modifica i valori se vuoi — teams, scorers, matchdays. I dati vengono salvati nel tuo browser.</div>
+          <div class="small-note">Modifica i valori se vuoi — teams (solo per mapping id→nome/logo), matchdays. Premi <strong>Calcola da giornate</strong> o <strong>Applica dati</strong>.</div>
         </div>
       </aside>
 
@@ -108,38 +109,22 @@
   </div>
 
   <script>
-    // --- Dati iniziali derivati dalle giornate che mi hai fornito ---
+    // --- Dati iniziali (corretti) ---
     const initialData = {
+      // teams array used mainly for mapping id -> name/logo. The computed standings will override win/draw/loss/gf/ga
       teams: [
-        // id must match images filenames (without path)
-        { id: 'MC', name: 'Manchester City', played: 3, win: 0, draw: 1, loss: 2, gf: 5, ga: 11 },
-        { id: 'S', name: 'Santos', played: 3, win: 1, draw: 0, loss: 2, gf: 7, ga: 13 },
-        { id: 'N', name: 'Napoli', played: 3, win: 2, draw: 1, loss: 0, gf: 9, ga: 2 },
-        { id: 'AM', name: 'Atletico Madrid', played: 3, win: 1, draw: 2, loss: 0, gf: 7, ga: 2 }
+        { id: 'MC', name: 'Manchester City' },
+        { id: 'S', name: 'Santos' },
+        { id: 'N', name: 'Napoli' },
+        { id: 'AM', name: 'Atletico Madrid' }
       ],
-      // scorers aggregated from tutte le giornate
-      scorers: [
-        { player: 'Kylian Mbappé', teamId: 'N', goals: 7 },
-        { player: 'Robert Lewandowski', teamId: 'S', goals: 3 },
-        { player: 'Erling Haaland', teamId: 'MC', goals: 2 },
-        { player: 'Ousmane Dembélé', teamId: 'AM', goals: 2 },
-        { player: 'Karim Benzema', teamId: 'S', goals: 2 },
-        { player: 'Cristiano Ronaldo', teamId: 'AM', goals: 2 },
-        { player: 'Vinicius', teamId: 'AM', goals: 2 },
-        { player: 'Lionel Messi', teamId: 'S', goals: 1 },
-        { player: 'João Félix', teamId: 'S', goals: 1 },
-        { player: 'Paulo Dybala', teamId: 'MC', goals: 1 },
-        { player: 'Marco Verratti', teamId: 'MC', goals: 1 },
-        { player: 'Paul Pogba', teamId: 'MC', goals: 1 },
-        { player: 'Timo Werner', teamId: 'N', goals: 1 },
-        { player: 'Marcus Rashford', teamId: 'AM', goals: 1 },
-        { player: 'Heung-min Son', teamId: 'N', goals: 1 }
-      ],
-      // matchdays as provided (compact style)
+      // scorers will be computed from matchdays
+      scorers: [],
+      // matchdays (corretti)
       matchdays: [
         {
           giornata: 1,
-          date: "", // optional
+          date: "",
           matches: [
             { homeId: 'MC', awayId: 'AM', score: '1-1', scorersHome: ['Paul Pogba'], scorersAway: ['Cristiano Ronaldo'] },
             { homeId: 'S', awayId: 'N', score: '1-4', scorersHome: ['Robert Lewandowski'], scorersAway: ['Kylian Mbappé','Kylian Mbappé','Kylian Mbappé','Kylian Mbappé'] }
@@ -159,15 +144,15 @@
           matches: [
             { homeId: 'AM', awayId: 'S', score: '5-0', scorersHome: ['Ousmane Dembélé','Ousmane Dembélé','Cristiano Ronaldo','Vinicius','Marcus Rashford'], scorersAway: [] },
             { homeId: 'MC', awayId: 'N', score: '0-4', scorersHome: [], scorersAway: ['Kylian Mbappé','Kylian Mbappé','Kylian Mbappé','Heung-min Son'] }
-           ]
+          ]
         },
         {
           giornata: 4,
           date: "",
           matches: [
             { homeId: 'MC', awayId: 'N', score: '0-4', scorersHome: [], scorersAway: ['Kylian Mbappé','Kylian Mbappé','Kylian Mbappé','Kylian Mbappé'] },
-            { homeId: 'AM', awayId: 'S, score: '4-2', scorersHome: ['Ousmane Dembélé','Cristiano Ronaldo','Cristiano Ronaldo','Riyad Mahrez'], scorersAway: ['Neymar Jr','Robert Lewandowski'] }
-             ]
+            { homeId: 'AM', awayId: 'S', score: '4-2', scorersHome: ['Ousmane Dembélé','Cristiano Ronaldo','Cristiano Ronaldo','Riyad Mahrez'], scorersAway: ['Neymar Jr','Robert Lewandowski'] }
+          ]
         },
         {
           giornata: 5,
@@ -175,23 +160,109 @@
           matches: [
             { homeId: 'MC', awayId: 'S', score: '2-2', scorersHome: ['Silva','Rafael Leão'], scorersAway: ['Neymar Jr','Karim Benzema'] },
             { homeId: 'AM', awayId: 'N', score: '3-2', scorersHome: ['Antoine Griezmann','Antoine Griezmann','Eden Hazard'], scorersAway: ['Kylian Mbappé','Raheem Sterling'] }
+          ]
+        }
       ]
     };
 
-    // Utility: enrich teams with pts and gd
-    function enrichTeams(teams){
-      return teams.map(t=>{
+    // Utility to deep clone
+    function clone(v){ return JSON.parse(JSON.stringify(v)); }
+
+    // Parse score string "x-y" -> [x, y] (numbers)
+    function parseScore(score){
+      if(!score || typeof score !== 'string') return [0,0];
+      const parts = score.split('-').map(s=>parseInt(s.trim(),10));
+      if(parts.length!==2 || isNaN(parts[0]) || isNaN(parts[1])) return [0,0];
+      return parts;
+    }
+
+    // Compute teams stats and scorers from matchdays
+    function computeFromMatchdays(rawData){
+      // rawData should contain .teams (optional mapping) and .matchdays
+      const teamMap = new Map(); // id -> { id, name, played, win, draw, loss, gf, ga }
+      // preload known teams (for names)
+      if(Array.isArray(rawData.teams)){
+        rawData.teams.forEach(t=>{
+          if(t && t.id){
+            teamMap.set(t.id, { id: t.id, name: t.name || t.id, played:0, win:0, draw:0, loss:0, gf:0, ga:0 });
+          }
+        });
+      }
+
+      const scorerMap = new Map(); // playerName -> { player, teamId, goals }
+
+      const mds = Array.isArray(rawData.matchdays) ? rawData.matchdays : [];
+
+      mds.forEach(md=>{
+        (md.matches || []).forEach(m=>{
+          const homeId = m.homeId;
+          const awayId = m.awayId;
+          // ensure teams exist in map
+          if(!teamMap.has(homeId)) teamMap.set(homeId, { id: homeId, name: homeId, played:0, win:0, draw:0, loss:0, gf:0, ga:0 });
+          if(!teamMap.has(awayId)) teamMap.set(awayId, { id: awayId, name: awayId, played:0, win:0, draw:0, loss:0, gf:0, ga:0 });
+          const home = teamMap.get(homeId);
+          const away = teamMap.get(awayId);
+
+          const [hg, ag] = parseScore(m.score);
+
+          // update matches played and goals
+          home.played += 1; away.played += 1;
+          home.gf += hg; home.ga += ag;
+          away.gf += ag; away.ga += hg;
+
+          // result
+          if(hg > ag){
+            home.win += 1; away.loss += 1;
+          } else if(hg < ag){
+            away.win += 1; home.loss += 1;
+          } else {
+            home.draw += 1; away.draw += 1;
+          }
+
+          // scorers: count occurrences in arrays (each occurrence = 1 goal)
+          const homeScorers = Array.isArray(m.scorersHome) ? m.scorersHome : [];
+          const awayScorers = Array.isArray(m.scorersAway) ? m.scorersAway : [];
+
+          // Count each listed scorer (handles repeated names)
+          homeScorers.forEach(name=>{
+            if(!name) return;
+            const key = name.trim();
+            const entry = scorerMap.get(key) || { player: key, teamId: homeId, goals: 0 };
+            entry.goals += 1;
+            // prefer keeping teamId if already set; but if mismatch, keep first
+            if(!entry.teamId) entry.teamId = homeId;
+            scorerMap.set(key, entry);
+          });
+
+          awayScorers.forEach(name=>{
+            if(!name) return;
+            const key = name.trim();
+            const entry = scorerMap.get(key) || { player: key, teamId: awayId, goals: 0 };
+            entry.goals += 1;
+            if(!entry.teamId) entry.teamId = awayId;
+            scorerMap.set(key, entry);
+          });
+        });
+      });
+
+      // convert teamMap to array and compute pts/gd
+      const teams = Array.from(teamMap.values()).map(t=>{
         const pts = (t.win||0)*3 + (t.draw||0);
         const gd = (t.gf||0) - (t.ga||0);
         return {...t, pts, gd};
       });
+
+      // convert scorerMap to array and sort
+      const scorers = Array.from(scorerMap.values()).sort((a,b)=> b.goals - a.goals || a.player.localeCompare(b.player));
+
+      return { teams, scorers, matchdays: mds };
     }
 
-    // Render standings table
+    // Renders
     function renderStandings(data){
       const tbody = document.querySelector('#table-standings tbody');
       tbody.innerHTML = '';
-      const teams = enrichTeams(data.teams.slice()).sort((a,b)=>b.pts - a.pts || b.gd - a.gd || b.gf - a.gf);
+      const teams = (data.teams || []).slice().sort((a,b)=> b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.name.localeCompare(b.name));
       teams.forEach((t,i)=>{
         const tr = document.createElement('tr');
         tr.dataset.teamId = t.id;
@@ -199,156 +270,4 @@
           <td class="pos">${i+1}</td>
           <td>
             <div class="team">
-              <img src="images/${t.id}.png" alt="${t.name} logo" class="badge" onerror="this.style.display='inline-block'; this.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAR0lEQVR4nO3RMQ0AAAjDMO5fNNSwY8Q0cSgkQwYMGDBgwIABAwYMGCBAwYMGDBgwIABAwYMGCBAwYMGDBgwIABAwYMGDBg0Ft8B0S0dXn9gAAAAASUVORK5CYII='"> 
-              <div>
-                <div style="font-weight:700">${t.name}</div>
-                <div class="small">Giocate: ${t.played}</div>
-              </div>
-            </div>
-          </td>
-          <td>${t.played}</td>
-          <td>${t.win}</td>
-          <td>${t.draw}</td>
-          <td>${t.loss}</td>
-          <td>${t.gf}</td>
-          <td>${t.ga}</td>
-          <td>${t.gd}</td>
-          <td style="font-weight:700">${t.pts}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    // Render scorers list
-    function renderScorers(data){
-      const ul = document.getElementById('scorers');
-      ul.innerHTML = '';
-      // sort by goals desc
-      const list = data.scorers.slice().sort((a,b)=>b.goals - a.goals || a.player.localeCompare(b.player));
-      list.forEach(s=>{
-        const li = document.createElement('li');
-        li.innerHTML = `<div><strong>${s.player}</strong><div class="small">${getTeamName(data, s.teamId)}</div></div><div style="font-weight:700">${s.goals}</div>`;
-        li.style.cursor = 'pointer';
-        li.onclick = ()=>highlightTeam(s.teamId);
-        ul.appendChild(li);
-      });
-    }
-
-    function getTeamName(data, id){
-      const t = data.teams.find(x=>x.id===id);
-      return t? t.name : id;
-    }
-
-    function highlightTeam(id){
-      document.querySelectorAll('#table-standings tbody tr').forEach(r=> r.style.background = '');
-      const tr = document.querySelector(`#table-standings tbody tr[data-team-id="${id}"]`);
-      if(tr){ tr.style.background = 'rgba(14,165,164,0.08)'; tr.scrollIntoView({behavior:'smooth', block:'center'}); }
-    }
-
-    // Render matchdays compact
-    function renderMatchdays(data){
-      const container = document.getElementById('matchdays');
-      container.innerHTML = '';
-      data.matchdays.forEach(md=>{
-        const div = document.createElement('div');
-        div.className = 'matchday';
-        const title = document.createElement('div');
-        title.style.fontWeight = '700';
-        title.style.marginBottom = '8px';
-        title.textContent = `Giornata ${md.giornata}${md.date? ' — '+md.date : ''}`;
-        div.appendChild(title);
-
-        md.matches.forEach(m=>{
-          const mdiv = document.createElement('div');
-          mdiv.className = 'match';
-          const homeName = getTeamName(data, m.homeId);
-          const awayName = getTeamName(data, m.awayId);
-          const left = document.createElement('div');
-          left.className = 'teams';
-          left.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><img src="images/${m.homeId}.png" class="badge" onerror="this.style.display='inline-block'; this.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAR0lEQVR4nO3RMQ0AAAjDMO5fNNSwY8Q0cSgkQwYMGDBgwIABAwYMGCBAwYMGDBgwIABAwYMGCBAwYMGDBgwIABAwYMGDBg0Ft8B0S0dXn9gAAAAASUVORK5CYII='"> <div style="font-weight:600">${homeName}</div></div>`;
-          const right = document.createElement('div');
-          right.className = 'teams';
-          right.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><img src="images/${m.awayId}.png" class="badge" onerror="this.style.display='inline-block'; this.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAR0lEQVR4nO3RMQ0AAAjDMO5fNNSwY8Q0cSgkQwYMGDBgwIABAwYMGCBAwYMGDBgwIABAwYMGCBAwYMGDBgwIABAwYMGDBg0Ft8B0S0dXn9gAAAAASUVORK5CYII='"> <div style="font-weight:600">${awayName}</div></div>`;
-
-          const score = document.createElement('div');
-          score.className = 'score';
-          score.innerText = m.score;
-
-          const details = document.createElement('div');
-          details.style.flex = '1';
-          details.style.marginLeft = '12px';
-          // scorers line
-          const scorersLine = document.createElement('div');
-          const homeSc = (m.scorersHome && m.scorersHome.length)? m.scorersHome.join(', ') : '-';
-          const awaySc = (m.scorersAway && m.scorersAway.length)? m.scorersAway.join(', ') : '-';
-          scorersLine.className = 'scorers';
-          scorersLine.innerHTML = `<em>${homeSc} / ${awaySc}</em>`;
-          details.appendChild(scorersLine);
-
-          mdiv.appendChild(left);
-          mdiv.appendChild(score);
-          mdiv.appendChild(right);
-          div.appendChild(mdiv);
-          div.appendChild(details);
-        });
-
-        container.appendChild(div);
-      });
-    }
-
-    // Sorting helpers
-    function sortBy(key){
-      const data = getCurrentData();
-      if(key==='pts') data.teams.sort((a,b)=> (b.win*3+b.draw) - (a.win*3+a.draw));
-      if(key==='gd') data.teams.sort((a,b)=> ((b.gf-b.ga) - (a.gf-a.ga)) );
-      if(key==='gf') data.teams.sort((a,b)=> b.gf - a.gf);
-      renderStandings(data);
-    }
-
-    // Load data from textarea or fallback
-    function getCurrentData(){
-      try{ return JSON.parse(document.getElementById('json-data').value); }catch(e){ return initialData; }
-    }
-
-    // Apply data from textarea, save to localStorage, re-render
-    function applyData(){
-      let data;
-      try{ data = JSON.parse(document.getElementById('json-data').value); }catch(e){ alert('JSON non valido. Controlla la sintassi.'); return; }
-      if(!Array.isArray(data.teams) || !Array.isArray(data.scorers) || !Array.isArray(data.matchdays)){ alert('Il JSON deve contenere teams, scorers e matchdays (tutti array).'); return; }
-      localStorage.setItem('campionatoData', document.getElementById('json-data').value);
-      renderStandings(data);
-      renderScorers(data);
-      renderMatchdays(data);
-    }
-
-    // Download the current full HTML (snapshot)
-    function downloadHTML(){
-      const blob = new Blob([document.documentElement.outerHTML], {type:'text/html'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'index.html';
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    }
-
-    // Clear local storage and reload defaults
-    function clearStorage(){
-      if(confirm('Vuoi cancellare i dati salvati localmente?')) {
-        localStorage.removeItem('campionatoData');
-        document.getElementById('json-data').value = JSON.stringify(initialData, null, 2);
-        applyData();
-      }
-    }
-
-    // Init on load: populate textarea from localStorage or initialData
-    document.addEventListener('DOMContentLoaded', ()=>{
-      const saved = localStorage.getItem('campionatoData');
-      if(saved){
-        document.getElementById('json-data').value = saved;
-      } else {
-        document.getElementById('json-data').value = JSON.stringify(initialData, null, 2);
-      }
-      applyData();
-    });
-  </script>
-</body>
-</html>
+              <img src="images/${t.id}.png" alt="${t.name} logo" class="badge" onerror="this.style.display='inline-block'; this.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAR0lEQVR4nO3RMQ0AAAjDMO5fNNSwY8Q0cSgkQwYMGDBgwIABAwYMGCBAwYMGDBgwIABAwYMGCBAwYMGDBgwIABAwYMG
